@@ -8,6 +8,7 @@ Processors useful regardless of the logging framework.
 import datetime
 import json
 import operator
+import re
 import sys
 import time
 
@@ -43,6 +44,7 @@ __all__ = [
     "format_exc_info",
     "ExceptionPrettyPrinter",
     "StackInfoRenderer",
+    "LogfmtRenderer",
 ]
 
 
@@ -226,7 +228,7 @@ class JSONRenderer:
     def __init__(
         self,
         serializer: Callable[..., Union[str, bytes]] = json.dumps,
-        **dumps_kw: Any
+        **dumps_kw: Any,
     ) -> None:
         dumps_kw.setdefault("default", _json_fallback_handler)
         self._dumps_kw = dumps_kw
@@ -446,3 +448,64 @@ class StackInfoRenderer:
             )
 
         return event_dict
+
+
+class LogfmtRenderer:
+    """
+    Render ``event_dict`` in the `logfmt <https://brandur.org/logfmt>`_ format.
+
+    :param sort_keys: Whether to sort keys when formatting.
+    :param key_order: List of keys that should be rendered in this exact
+        order.  Missing keys will be omitted, extra keys will be sorted
+        depending on *sort_keys* and the dict class.
+    """
+
+    def __init__(
+        self,
+        sort_keys: bool = False,
+        key_order: Optional[Sequence[str]] = None,
+    ):
+        self._sort_keys = sort_keys
+        self._key_order = key_order
+        self._needs_quote = re.compile(r"[\s=]")
+
+    def __call__(
+        self, _: WrappedLogger, __: str, event_dict: EventDict
+    ) -> str:
+        result: List[str] = []
+        if self._key_order:
+            items = [
+                (k, event_dict.pop(k))
+                for k in self._key_order
+                if k in event_dict
+            ]
+            items.extend(
+                sorted(event_dict.items())
+                if self._sort_keys
+                else event_dict.items()
+            )
+        else:
+            items = (
+                sorted(event_dict.items())
+                if self._sort_keys
+                else event_dict.items()
+            )
+
+        for k, v in items:
+            if v is True:
+                v = "true"
+            elif v is False:
+                v = "false"
+            elif v is None:
+                v = ""
+            else:
+                v = str(v)
+                v = v.replace("\\", "\\\\").replace('"', '\\"')
+                if v == "" or self._needs_quote.search(v):
+                    v = f'"{v}"'
+                # escape newlines to avoid parsing ambiguities.
+                # See https://github.com/kr/logfmt/issues/9
+                v = v.replace("\r", "\\r").replace("\n", "\\n")
+            result.append(f"{k}={v}")
+
+        return " ".join(result)

@@ -18,6 +18,7 @@ from structlog.processors import (
     ExceptionPrettyPrinter,
     JSONRenderer,
     KeyValueRenderer,
+    LogfmtRenderer,
     StackInfoRenderer,
     TimeStamper,
     UnicodeDecoder,
@@ -551,3 +552,81 @@ class TestFigureOutExcInfo:
         e = ValueError()
 
         assert (e.__class__, e, None) == _figure_out_exc_info(e)
+
+
+class TestLogfmtRenderer:
+    def test_sort_keys(self, event_dict):
+        """
+        Keys are sorted if sort_keys is set.
+        """
+        rv = LogfmtRenderer(sort_keys=True)(None, None, event_dict)
+
+        assert r'a=<A(\\o/)> b="[3, 4]" x=7 y=test z="(1, 2)"' == rv
+
+    def test_order_complete(self, event_dict):
+        """
+        Orders keys according to key_order.
+        """
+        rv = LogfmtRenderer(key_order=["y", "b", "a", "z", "x"])(
+            None, None, event_dict
+        )
+
+        assert r'y=test b="[3, 4]" a=<A(\\o/)> z="(1, 2)" x=7' == rv
+
+    def test_order_missing_dropped(self, event_dict):
+        """
+        Missing keys get dropped
+        """
+        rv = LogfmtRenderer(key_order=["c", "y", "b", "a", "z", "x"])(
+            None, None, event_dict
+        )
+
+        assert r'y=test b="[3, 4]" a=<A(\\o/)> z="(1, 2)" x=7' == rv
+
+    def test_order_extra(self, event_dict):
+        """
+        Extra keys get sorted if sort_keys=True.
+        """
+        event_dict["B"] = "B"
+        event_dict["A"] = "A"
+
+        rv = LogfmtRenderer(
+            key_order=["c", "y", "b", "a", "z", "x"], sort_keys=True
+        )(None, None, event_dict)
+
+        assert (r'y=test b="[3, 4]" a=<A(\\o/)> z="(1, 2)" x=7 A=A B=B') == rv
+
+    def test_random_order(self, event_dict):
+        """
+        No special ordering doesn't blow up.
+        """
+        rv = LogfmtRenderer()(None, None, event_dict)
+
+        assert isinstance(rv, str)
+
+    @pytest.mark.parametrize(
+        "value, formatted",
+        [
+            (True, "true"),
+            (False, "false"),
+            (None, ""),
+            ("", '""'),
+            ("plain", "plain"),
+            ("with space", '"with space"'),
+            ("with\ttab", '"with\ttab"'),
+            ("with\nnewline", r'"with\nnewline"'),
+            ("with\rnewline", r'"with\rnewline"'),
+            (r"with\slash", r"with\\slash"),
+            (1, "1"),
+            (-0.01, "-0.01"),
+            ([1, 2], '"[1, 2]"'),
+            ({"a": 1}, "\"{'a': 1}\""),
+        ],
+    )
+    def test_logfmt_formatting(self, value, formatted):
+        """
+        Entry is formatted as logfmt.
+        """
+        rv = LogfmtRenderer()(None, None, {"event": value})
+
+        assert f"event={formatted}" == rv
