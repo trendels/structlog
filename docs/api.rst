@@ -261,6 +261,16 @@ Please see :doc:`thread-local` for details.
       >>> TimeStamper(fmt="%Y", key="year")(None, None, {})  # doctest: +SKIP
       {'year': '2013'}
 
+.. autoclass:: LogfmtRenderer
+
+   .. doctest::
+
+      >>> from structlog.processors import LogfmtRenderer
+      >>> LogfmtRenderer()(None, None, {"a": 1, "b": "foo", "c": "hello, world!"})
+      'a=1 b=foo c="hello, world!"'
+      >>> LogfmtRenderer(key_order=["b", "a"])(None, None, {"a": 1, "b": 2})
+      'b=2 a=1'
+
 
 `structlog.stdlib` Module
 -------------------------
